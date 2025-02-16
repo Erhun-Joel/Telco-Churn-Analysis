@@ -31,7 +31,7 @@ churn.data %>%
     mutate(prop = n/sum(n))
 # Again, this proportions makes sense. 40% of customers on Fiber optics Churn compared to DSL and None with 19% and 7% respectively
 
-# Total amount of charges payed to Telco seem to affect the probability of churning positively. Lets chect that out
+# Total amount of charges payed to Telco seem to affect the probability of churning positively. Lets check that out
 churn.data %>%
   mutate(Churn = as.factor(if_else(Churn == "No", "Did not Churn", "Churned"))) %>%
   ggplot(aes(TotalCharges, Churn, fill = Churn)) +

@@ -5,10 +5,10 @@ library(discrim)
 
 # Data has already being split in the preprocessing R script
 
-# Review train data
+# Review train data (churn.train is provided in the repository)
 churn.train
 
-# Review test data
+# Review test data (churn.test is provided in the repository)
 churn.test
 
 # First, lets create a preprocessing recipe
@@ -44,12 +44,14 @@ workflow_set(
       step_corr(all_numeric_predictors(), threshold = 0.9) %>%
       step_dummy(all_nominal_predictors()),
     churn.recipe = churn.recipe,
+    churn.recipe = churn.recipe,
     churn.recipe = churn.recipe
   ),
   models = list(
     logistic.spec = logistic_reg(),
     linear.discrim = discrim_linear(mode = "classification", engine = "MASS"),
     rf.spec = rand_forest(mode = "classification", engine = "ranger"),
+    decision.spec = decision_tree(mode = "classification", engine = "rpart"),
     xgb.spec = boost_tree(mode = "classification", engine = "xgboost")
   ),
   cross = FALSE
@@ -61,7 +63,7 @@ my.metrics <- metric_set(sensitivity, specificity, roc_auc)
 my.metrics
 
 # Get fitting results
-set.seed(1233)
+set.seed(1234)
 simple.results <-
 workflow_map(
   object = simple.workflow.set,
@@ -75,7 +77,67 @@ simple.results
 # Check out result of fitting
 simple.results %>%
   collect_metrics()
-# We see that logistic models do better than others
+
+# Arrange by roc_auc
+simple.results %>%
+  collect_metrics() %>%
+  filter(.metric == "roc_auc") %>%
+  arrange(-mean)
+# Logistic regression seems to be doing the best
+
+# However, by studying literature, I know that the tree based models can be more better in terms of prediction. Lets see if we can do this
+# Using random forests, lets work to improve prediction
+
+# Declare spec
+random.spec <- rand_forest(mtry = tune(), min_n = tune(), trees = 1500) %>%
+  set_mode("classification") %>%
+  set_engine("ranger")
+
+# Create workflow
+rf.workflow <- workflow(
+  preprocessor = churn.recipe,
+  spec = random.spec
+)
+rf.workflow
+
+# Create a grid to test against
+rf.grid <- grid_regular(dials::finalize(mtry(), churn.train), min_n(), levels = c(5, 7))
+rf.grid
+
+# Fit model to grid values
+set.seed(1256)
+rf.results <- tune_grid(
+  object = rf.workflow,
+  resamples = churn.folds,
+  grid = rf.grid,
+  metrics = my.metrics,
+  control = control_resamples(save_pred = TRUE, verbose = FALSE)
+)
+rf.results
+
+autoplot(rf.results)
+
+# The results do slightly better than the logistic model capping at around 0.848
+# Using this results, lets make another grid and test on it
+rf.grid <- expand_grid(mtry = c(2, 4, 6, 8, 10), min_n = c(30, 40, 50, 60))
+rf.grid
+
+# Now lets retrain our random forest on this
+set.seed(1256)
+rf.results1 <- tune_grid(
+  object = rf.workflow,
+  resamples = churn.folds,
+  grid = rf.grid,
+  metrics = my.metrics,
+  control = control_resamples(save_pred = TRUE, verbose = FALSE)
+)
+rf.results1
+
+# Plot the grid using autoplot
+autoplot(rf.results1)
+
+# We could keep on trying to improve results. However, this project is not particularly interest in prediction
+# Therefore, we will continue with logistic regression
 
 # Lets see if regularization can increase the performance of logistic regression
 
@@ -178,7 +240,7 @@ churn.test["Churn"] %>%
     .pred_No
   )
 
-# Lets do one more thing; a neural network
+# Lets do one more thing, for the fun of it; a neural network!
 
 # Creating a neural spec
 neural.spec <- mlp(hidden_units = c(17, 10, 6)) %>%
@@ -206,7 +268,7 @@ neural.results %>%
   collect_metrics() %>%
   filter(.metric == "roc_auc")
 # The neural networks results are moderate and do not surpass the logistic model in terms of roc_auc
-# For this reason, logistic models would be used
+# As we said previously, this is an exploratory project. Therefore, we continue with the logistic model
 
 # Lets vary the cutoff mark to capture more number of potentially churning individuals
 bind_cols(
@@ -222,3 +284,5 @@ bind_cols(
     .pred_No
   )
 # Varying the cut off probability has the ability to capture more or less of the amount of people to be churned at the expense of increasing false positives
+# Ideally, collaboration with the business manager is important to know how much the company needs to know who Churns
+# If the company can't afford to mis-classify those who churn, the probability above would be reduced appropraitely

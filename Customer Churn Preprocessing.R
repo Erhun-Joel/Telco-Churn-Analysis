@@ -10,6 +10,7 @@ churn.data
 # Budget data by spliting data set into train and test
 
 # Create random row samples
+set.seed(125)
 train.numerics <- sample(x = 1:dim(churn.data)[1], size = dim(churn.data)[1]*0.8)
 train.numerics
 
